@@ -1,100 +1,212 @@
 # Tosint - Telegram OSINT Tool
 
-Tosint (Telegram OSINT) is a tool designed to extract valuable information from Telegram bots and channels. 
-It is ideal for security researchers, investigators, and anyone interested in gathering insights from Telegram entities. 
-Using OSINT techniques, Tosint can uncover essential details about bots and associated channels, offering a deeper understanding of their structure and activity.
+Tosint (Telegram OSINT) is a Python tool to analyze a Telegram bot token and a target chat ID (group/channel) using Telegram Bot API.
 
-### Features
+It is designed for investigators, threat analysts, and security researchers who need quick visibility into Telegram entities used in phishing, malware logs, credential collection, and similar campaigns.
 
-Tosint allows you to extract the following information:
+## What Tosint Extracts
 
-- **Bot Information**: First Name, Username, User ID, Status, and whether the bot can read group messages.
-- **Chat Information**: Chat Title, Type (group or channel), ID, Username, Invite Link.
-- **Additional Information**:
-    - Number of users in the chat.
-    - Details of chat administrators, including their roles (e.g., admin, member).
+### Bot Intelligence
 
+- Bot identity: first name, username, user ID
+- Bot capability signal: `can_read_all_group_messages`
+- Bot profile metadata:
+  - `getMyDescription`
+  - `getMyShortDescription`
+- Bot default privileges:
+  - `getMyDefaultAdministratorRights` for groups
+  - `getMyDefaultAdministratorRights` for channels
+- Bot status in target chat: `getChatMember` (`administrator`, `member`, etc.)
 
-### Use Cases
+### Chat Intelligence
 
-Tosint is a valuable tool for cybersecurity researchers involved in the analysis of malware or phishing kits. Cybercriminals increasingly use Telegram to collect information stolen from victims, such as: Malware logs, Login Credentials, Credit or Debit Card details.
+- Core metadata from `getChat`:
+  - title, type, ID
+  - username and active usernames
+  - description (normalized to a single line)
+  - visibility/policy flags (when available), such as:
+    - visible history
+    - hidden members
+    - protected content
+    - join-by-request
+    - slow mode
+    - auto-delete timer
+  - linked chat ID
+- Linked chat enrichment:
+  - if `linked_chat_id` is available, Tosint performs a second `getChat`
+- Invite links:
+  - existing invite link (if exposed by Telegram)
+  - `exportChatInviteLink`
+  - `createChatInviteLink`
+- Member count: `getChatMemberCount`
 
-During investigations, by identifying the Token and Chat ID used by criminals (often found through malware or phishing kit analysis), Tosint enables the collection of valuable information to monitor the criminal activities. This helps researchers gain a clearer understanding of the infrastructure used by attackers, supporting a timely and targeted response to emerging threats.
+### Admin Intelligence
 
+From `getChatAdministrators`, Tosint prints each admin with:
 
-### Who Uses Tosint?
+- index (`#1`, `#2`, ...)
+- first name / last name
+- user ID
+- username
+- bot flag
+- role/status (`creator`, `administrator`, ...)
+- custom title (if present)
+- granular admin permissions (`can_*`, plus `is_anonymous`)
 
-Tosint has been adopted by security researchers, investigators, and professionals in the field of open-source intelligence (OSINT) to gather insights from Telegram bots and channels. 
+## Output Modes
 
-I'm proud to mention that Tosint is also used by law enforcement agencies for investigative purposes, further demonstrating its practical value in real-world applications.
+Tosint supports both human-readable and JSON output.
 
-### Example Usage
+- Default: formatted text output
+- `--json`: JSON only on stdout (no text output)
+- `--json-file <path>`: save JSON report to file
+- `--json --json-file <path>`: JSON on stdout + JSON saved to file
 
-To use Tosint, you can either provide the `Telegram Token` and `Chat ID` interactively, or pass them as command-line arguments.
-
-**Interactive Mode**:
-```
-$ python3 tosint.py
-Telegram Token (bot1xxx): 562ZZZZ900:XXXXNj7_wIEi74GXXX90CIxACBIX_YYYYwI
-Telegram Chat ID (-100xxx): -1001XXXXXX196
-```
-
-**Command-Line Arguments**:
-```
-$ python3 tosint.py -t 562ZZZZ900:XXXXNj7_wIEi74GXXX90CIxACBIX_YYYYwI -c -1001XXXXXX196
-```
-
-Both approaches will provide you with detailed information about the bot and chat.
-
-### Example Output
-
-After running the tool, the following is an example of the output you can expect:
-
-```
-
-Analysis of token: 562ZZZZ900:XXXXNj7_wIEi74GXXX90CIxACBIX_YYYYwI and chat id: -1001XXXXXX196
-
-Bot First Name: Over Security Bot
-Bot Username: over_security_bot
-Bot User ID: 56XXXXXX00
-Bot Can Read Group Messages: False
-Bot In The Chat Is An: administrator
-Chat Title: Over Security
-Chat Type: channel
-Chat ID: -100XXXXXX3196
-Chat has Visible History: True
-Chat Username: OverSecurity
-Chat Invite Link: https://t.me/+VmWXXXXXXHI1MTM0
-Chat Invite Link (exported): https://t.me/+AqcXXXXXXGJmZjk0
-Chat Invite Link (created): https://t.me/+LCsXXXXXXMgyYTg0
-Number of users in the chat: 286
-Administrators in the chat:
-{'id': 56XXXXXX00, 'is_bot': True, 'first_name': 'Over Security Bot', 'username': 'over_security_bot'}
-{'id': 20XXXX39, 'is_bot': False, 'first_name': 'Andrea', 'last_name': 'Draghetti', 'username': 'AndreaDraghetti'}
-```
-
-### Installation
+## Installation
 
 1. Clone the repository:
-```
+
+```bash
 git clone https://github.com/drego85/tosint.git
+cd tosint
 ```
 
-2. Install the required dependencies:
-```
+2. Install dependencies:
+
+```bash
 pip install -r requirements.txt
 ```
 
-3. Run the tool:
-```
+## Usage
+
+### Interactive mode
+
+```bash
 python3 tosint.py
 ```
 
-Make sure you have Python 3.x installed.
+### CLI mode
+
+```bash
+python3 tosint.py -t <TELEGRAM_BOT_TOKEN> -c <TELEGRAM_CHAT_ID>
+```
+
+### JSON only (stdout)
+
+```bash
+python3 tosint.py -t <TELEGRAM_BOT_TOKEN> -c <TELEGRAM_CHAT_ID> --json
+```
+
+### Save JSON report to file
+
+```bash
+python3 tosint.py -t <TELEGRAM_BOT_TOKEN> -c <TELEGRAM_CHAT_ID> --json-file /tmp/tosint_report.json
+```
+
+### Options
+
+- `-t`, `--token`: Telegram bot token (with or without `bot` prefix)
+- `-c`, `--chat_id`: Telegram chat ID (e.g. `-100...` for channels/supergroups)
+- `--json`: print JSON report only
+- `--json-file`: save JSON report to chosen path
+
+## Example Text Output (obfuscated)
+
+```text
+Analysis of token: 81XXXXXX66:AAF... and chat id: -1003XXXX075
+
+[BOT]
+Bot First Name: Example Bot
+Bot Username: example_bot
+Bot User ID: 81XXXXXX66
+Bot Can Read Group Messages: false
+Bot Short Description: @example_channel
+Bot Default Administrator Rights (groups): {"can_manage_chat": false, ...}
+Bot Default Administrator Rights (channels): {"can_manage_chat": false, ...}
+Bot In The Chat Is An: administrator
+
+[CHAT]
+Chat Title: Example Channel
+Chat Type: channel
+Chat ID: -1003XXXX075
+Chat Username: example_channel
+Chat Active Usernames: ["example_channel"]
+Chat Description: Example single-line description.
+Chat Has Visible History: true
+Invite Links:
+  Chat Invite Link: https://t.me/+XXXXXXXXXXXX
+  Chat Invite Link (exported): https://t.me/+YYYYYYYYYYYY
+  Chat Invite Link (created): https://t.me/+ZZZZZZZZZZZZ
+Number of users in the chat: 339
+
+[ADMINS]
+Administrators in the chat:
+- #1
+  First Name: Example
+  Last Name: Admin
+  User ID: 20XXXX39
+  Username: ExampleAdmin
+  Is Bot: false
+  Status: administrator
+  Permissions: {"can_manage_chat": true, "can_delete_messages": true, ...}
+```
+
+## Example JSON Report (structure)
+
+```json
+{
+  "input": {
+    "token": "81XXXXXX66:AAF...",
+    "chat_id": "-1003XXXX075"
+  },
+  "bot": {
+    "first_name": "Example Bot",
+    "username": "example_bot",
+    "user_id": 8100000000,
+    "can_read_all_group_messages": false,
+    "short_description": "@example_channel",
+    "default_admin_rights_groups": {},
+    "default_admin_rights_channels": {},
+    "status_in_chat": "administrator"
+  },
+  "chat": {
+    "id": -1003000000075,
+    "title": "Example Channel",
+    "type": "channel",
+    "member_count": 339
+  },
+  "invite_links": {
+    "chat_invite_link": "https://t.me/+XXXXXXXXXXXX",
+    "exported": "https://t.me/+YYYYYYYYYYYY",
+    "created": "https://t.me/+ZZZZZZZZZZZZ"
+  },
+  "admins": [
+    {
+      "index": 1,
+      "first_name": "Example",
+      "last_name": "Admin",
+      "user_id": 20000039,
+      "username": "ExampleAdmin",
+      "is_bot": false,
+      "status": "administrator",
+      "custom_title": null,
+      "permissions": {
+        "can_manage_chat": true
+      }
+    }
+  ],
+  "errors": []
+}
+```
+
+## Operational Notes
+
+- Some fields are returned by Telegram only when the bot has enough visibility/permissions.
+- Invite-link methods are active operations (`exportChatInviteLink`, `createChatInviteLink`) and may fail based on bot role.
 
 ### Contributing and Supporting the Project
 
-There are two ways you can contribute to the development of **Tosint**:
+There are three ways you can contribute to the development of **Tosint**:
 
 1. **Development Contributions**:
 
@@ -105,6 +217,9 @@ There are two ways you can contribute to the development of **Tosint**:
 
    [![Buy Me a Coffee](https://img.shields.io/badge/-Buy%20Me%20a%20Coffee-orange?logo=buy-me-a-coffee&logoColor=white&style=flat-square)](https://buymeacoffee.com/andreadraghetti)
 
-### License
+3. **Share the Project**:
+   Sharing Tosint with colleagues, friends, and anyone interested in OSINT helps the project grow and reach more practitioners in the community.
+
+## License
 
 This project is licensed under the GNU General Public License v3.0.
