@@ -4,6 +4,7 @@ import json
 import requests
 import argparse
 import mimetypes
+from contextlib import contextmanager
 from datetime import datetime
 
 TEXT_OUTPUT_ENABLED = True
@@ -383,6 +384,61 @@ def ensure_dir_path(path_value):
     return path_value + os.sep
 
 
+def archive_revoked_session(session_path):
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    archive_path = f"{session_path}.revoked-{timestamp}"
+    suffix = 1
+    while os.path.exists(archive_path):
+        archive_path = f"{session_path}.revoked-{timestamp}-{suffix}"
+        suffix += 1
+    os.replace(session_path, archive_path)
+    for sqlite_suffix in ("-journal", "-wal", "-shm"):
+        sidecar_path = f"{session_path}{sqlite_suffix}"
+        if os.path.exists(sidecar_path):
+            os.replace(sidecar_path, f"{archive_path}{sqlite_suffix}")
+    return archive_path
+
+
+@contextmanager
+def open_download_client(
+    client_class,
+    session_revoked_error,
+    session_name,
+    client_kwargs,
+    recover_revoked_session=False,
+    recovery_info=None
+):
+    recovery_info = recovery_info if recovery_info is not None else {}
+    app = client_class(session_name, **client_kwargs)
+
+    try:
+        app.start()
+    except session_revoked_error:
+        if not recover_revoked_session:
+            raise
+
+        session_path = str(getattr(app.storage, "database", f"{session_name}.session"))
+        if not os.path.isfile(session_path):
+            raise RuntimeError(
+                f"Telegram session was revoked, but its local file was not found: {session_path}"
+            )
+
+        archive_path = archive_revoked_session(session_path)
+        recovery_info["session_recovered"] = True
+        recovery_info["revoked_session_archive"] = display_path(archive_path)
+        text_print("ATTENTION Saved Telegram session was revoked or is no longer valid.")
+        text_print(f"Archived revoked session: {display_path(archive_path)}")
+        text_print("Retrying once with a new bot session...")
+
+        app = client_class(session_name, **client_kwargs)
+        app.start()
+
+    try:
+        yield app
+    finally:
+        app.stop()
+
+
 def infer_media_extension(message):
     # Prefer original file extension when Telegram provides a file name.
     for attr in ("document", "audio", "video", "animation"):
@@ -532,6 +588,7 @@ def download_chat_content(
 ):
     try:
         from pyrogram import Client
+        from pyrogram.errors import SessionRevoked
     except ImportError as error:
         raise RuntimeError(
             "Pyrofork is not installed. Run: pip install pyrofork"
@@ -556,6 +613,8 @@ def download_chat_content(
         "media_downloaded": 0,
         "media_failed": 0,
         "interrupted": False,
+        "session_recovered": False,
+        "revoked_session_archive": None,
         "manifest_path": None,
         "text_path": None,
         "errors": [],
@@ -572,8 +631,17 @@ def download_chat_content(
             raise RuntimeError("download auth mode 'bot' requires a valid bot token.")
         client_kwargs["bot_token"] = bot_token_for_auth
 
+    recovery_info = {}
     try:
-        with Client(session_name, **client_kwargs) as app:
+        with open_download_client(
+            Client,
+            SessionRevoked,
+            session_name,
+            client_kwargs,
+            recover_revoked_session=download_auth_mode == "bot",
+            recovery_info=recovery_info
+        ) as app:
+            result.update(recovery_info)
             last_progress_scanned = 0
 
             def maybe_log_progress(current_message_id=None):

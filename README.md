@@ -300,6 +300,12 @@ Administrators in the chat:
 
 ## Troubleshooting
 
+- `SESSION_REVOKED`: in bot authentication mode, Tosint preserves the invalid
+  MTProto session as `<session>.session.revoked-<timestamp>` and automatically
+  retries once with a fresh session using the supplied bot token. The recovery
+  is also recorded in JSON output as `session_recovered` and
+  `revoked_session_archive`. User sessions are not replaced automatically
+  because they require interactive authentication.
 - `PEER_ID_INVALID` / `CHAT_ID_INVALID`: try a separate session (`--session-name`) and/or the other authentication mode (bot token vs user account).
 - Many scanned messages but `exported=0`: the scanned ID range may not be accessible/visible for that session; try `--download-mode history` or a different `--download-start-id`.
 - Frequent `Waiting for X seconds` messages: this is Telegram FloodWait rate limiting and is expected on large `idscan` runs.
